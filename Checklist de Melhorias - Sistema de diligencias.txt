@@ -1,0 +1,118 @@
+Plano de Ação de Desenvolvimento - Arquitetura Profissional
+Este documento detalha o plano de desenvolvimento para construir uma plataforma robusta, segura e escalável, seguindo as melhores práticas da indústria.
+
+Fase 1: Fundação da Arquitetura do Backend [Prioridade: Crítica]
+Objetivo: Construir um alicerce sólido e seguro, corrigindo as falhas estruturais e implementando um sistema de autenticação por perfis.
+
+[ ] 1. Configuração do Banco de Dados e Ambiente
+
+[ ] Apagar completamente o banco de dados antigo para evitar conflitos.
+
+[ ] Executar o novo script database.sql - Arquitetura Profissional para criar a nova estrutura.
+
+[ ] Configurar a gestão de variáveis de ambiente (.env) para DATABASE_URL, JWT_SECRET, PORT, etc.
+
+[ ] 2. Implementar a Camada de Acesso a Dados (Repository Pattern)
+
+[ ] Criar uma camada de abstração para as consultas ao banco de dados. Em vez de db.query direto nos controladores, teremos userRepository.findById(), demandaRepository.create().
+
+Benefício: Isola a lógica de negócio da lógica de banco de dados, facilitando testes e futuras migrações.
+
+[ ] 3. Desenvolver o Módulo de Autenticação e Autorização por Perfil
+
+[ ] Criar um auth.controller.js robusto com validação de entrada (usando express-validator).
+
+[ ] Endpoints de Cadastro:
+
+POST /api/auth/clientes/register: Cadastra um novo cliente, faz o hash da senha com bcryptjs.
+
+POST /api/auth/correspondentes/register: Cadastra um novo correspondente, validando os campos obrigatórios (como OAB para advogados).
+
+Endpoints de Login:
+
+POST /api/auth/login: Um único endpoint que verifica as tabelas admins, clientes, e correspondentes_servicos. Ao encontrar o usuário, gera um token JWT contendo userId, email e perfil (admin, cliente ou correspondente).
+
+Middleware de Autorização:
+
+Criar um auth.middleware.js que decodifica o token JWT.
+
+Criar middlewares de permissão específicos, ex: isAdmin, isCliente, que verificam o campo perfil do token. Ex: router.get('/demandas', authMiddleware, isAdmin, demandasController.getAll).
+
+[ ] 4. Testes Unitários e de Integração
+
+[ ] Configurar o ambiente de testes com Jest e Supertest para usar um banco de dados de teste separado.
+
+[ ] Escrever testes unitários para a lógica de negócio (ex: cálculo de valores).
+
+[ ] Escrever testes de integração para todos os endpoints da API, cobrindo casos de sucesso e de erro (ex: tentar cadastrar um email que já existe).
+
+Fase 2: Lógica de Negócio e Endpoints Core [Prioridade: Alta]
+Objetivo: Construir as funcionalidades centrais da plataforma, respeitando as permissões de cada perfil.
+
+[ ] 1. Módulo de Gestão de Demandas
+
+[ ] Criar o demanda.controller.js e demanda.routes.js.
+
+[ ] POST /api/demandas (Apenas para Clientes logados): Cria uma nova diligência, associada ao cliente_id do token.
+
+[ ] GET /api/demandas (Para Admins): Lista todas as diligências com filtros avançados (status, cliente, etc.).
+
+[ ] GET /api/demandas/minhas (Para Clientes e Correspondentes): Lista apenas as diligências associadas ao usuário logado.
+
+[ ] PUT /api/demandas/:id/atribuir (Apenas para Admins): Atribui uma diligência a um correspondente.
+
+[ ] PUT /api/demandas/:id/status (Para Admins e o Correspondente atribuído): Atualiza o status de uma diligência.
+
+[ ] DELETE /api/demandas/:id (Apenas para Admins).
+
+Importante: Cada alteração em uma demanda deve gerar um registro na tabela log_atividades.
+
+[ ] 2. Módulo de Gestão de Usuários (Painel Admin)
+
+[ ] Criar endpoints (GET, PUT) para o Admin poder listar, visualizar, ativar/desativar clientes e correspondentes.
+
+[ ] 3. Módulo de Upload de Anexos
+
+[ ] Configurar o multer com armazenamento seguro (ex: AWS S3 ou um diretório privado no servidor).
+
+[ ] Criar o endpoint POST /api/demandas/:id/anexos que permite o upload de ficheiros. A permissão deve ser para o cliente da demanda, o correspondente atribuído ou um admin.
+
+Fase 3: Desenvolvimento do Frontend (React/Vue/Angular) [Prioridade: Média]
+Objetivo: Construir uma interface moderna, reativa e componentizada para consumir a nova API.
+
+[ ] 1. Estruturação do Projeto Frontend
+
+[ ] Escolher um framework moderno (React é uma escolha sólida).
+
+[ ] Configurar a estrutura de pastas, roteamento (ex: react-router-dom), e um gerenciador de estado (ex: Redux Toolkit ou Zustand).
+
+[ ] Implementar uma camada de serviço para as chamadas à API (ex: usando axios).
+
+[ ] 2. Desenvolver os Painéis por Perfil
+
+[ ] Implementar as telas de Login e Cadastro.
+
+[ ] Painel do Administrador: Criar os componentes para visualizar e gerenciar todas as demandas, usuários e configurações.
+
+[ ] Portal do Cliente: Criar os componentes para o cliente solicitar e acompanhar suas diligências.
+
+[ ] Portal do Correspondente: Criar os componentes para o correspondente gerenciar as diligências atribuídas a ele.
+
+Fase 4: Funcionalidades Avançadas e Polimento [Prioridade: Baixa]
+Objetivo: Adicionar funcionalidades que diferenciam a plataforma e melhoram a experiência.
+
+[ ] 1. Sistema de Notificações em Tempo Real
+
+[ ] Implementar WebSockets (ex: com Socket.IO) para notificações instantâneas na interface (ex: "Sua diligência foi atualizada para 'Cumprida'").
+
+[ ] 2. Módulo Financeiro
+
+[ ] Desenvolver os endpoints e a interface para o admin gerenciar pagamentos.
+
+[ ] Integrar com um gateway de pagamento (ex: Stripe, Mercado Pago) para automatizar cobranças.
+
+[ ] 3. Sistema de Avaliação
+
+[ ] Implementar a lógica para clientes avaliarem os correspondentes.
+
+Este plano é ambicioso, mas é o caminho correto para construir o sistema que você imaginou, sem atalhos e sem erros básicos. Estou pronto para começar a implementar o código para a Fase 1 assim que você aprovar esta nova direção.
