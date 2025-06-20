@@ -1,128 +1,97 @@
-// repositories/correspondente.repository.js
-
-const { pool } = require('../db');
+/**
+ * repositories/correspondente.repository.js
+ * Repositório para gerir as operações CRUD da tabela 'correspondentes_servicos'.
+ */
+const db = require('../db');
+const bcrypt = require('bcryptjs');
 
 /**
- * Cria um novo correspondente de serviços no banco de dados.
- * @param {object} correspondenteData - Os dados do correspondente.
- * @returns {Promise<object>} Retorna o objeto do correspondente recém-criado.
+ * Cria um novo correspondente na base de dados.
+ * @param {object} dados - Dados do correspondente a ser criado.
+ * @returns {Promise<object>} O correspondente recém-criado (sem a senha).
  */
-const create = async (correspondenteData) => {
-  const {
-    nome_completo, tipo, oab, rg, cpf, email, telefone,
-    endereco_id, comarcas_atendidas, senha_hash
-  } = correspondenteData;
+exports.create = async (dados) => {
+    const { 
+        nome_completo, tipo, oab, rg, cpf, email, telefone, 
+        endereco_id, comarcas_atendidas, senha 
+    } = dados;
+    
+    const senha_hash = await bcrypt.hash(senha, 10);
 
-  try {
-    const result = await pool.query(
-      `INSERT INTO correspondentes_servicos 
-       (nome_completo, tipo, oab, rg, cpf, email, telefone, endereco_id, comarcas_atendidas, senha_hash)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-       RETURNING id, nome_completo, email, tipo, created_at`,
-      [nome_completo, tipo, oab, rg, cpf, email, telefone, endereco_id, comarcas_atendidas, senha_hash]
-    );
+    const query = `
+        INSERT INTO correspondentes_servicos (
+            nome_completo, tipo, oab, rg, cpf, email, telefone, 
+            endereco_id, comarcas_atendidas, senha_hash
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+        RETURNING id, nome_completo, tipo, email, is_active, created_at;
+    `;
+    const values = [
+        nome_completo, tipo, oab, rg, cpf, email, telefone, 
+        endereco_id, comarcas_atendidas, senha_hash
+    ];
+    const result = await db.query(query, values);
     return result.rows[0];
-  } catch (error) {
-    console.error(`Erro ao criar correspondente (${email}):`, error);
-    throw error;
-  }
 };
 
 /**
- * Busca um correspondente pelo seu endereço de email.
- * @param {string} email - O email do correspondente.
- * @returns {Promise<object|null>} Retorna o objeto completo do correspondente (incluindo senha) se encontrado.
+ * Busca todos os correspondentes.
+ * @returns {Promise<Array>} Uma lista de todos os correspondentes.
  */
-const findByEmail = async (email) => {
-  try {
-    const result = await pool.query(
-      'SELECT * FROM correspondentes_servicos WHERE email = $1',
-      [email]
-    );
-    return result.rows[0] || null;
-  } catch (error) {
-    console.error(`Erro ao buscar correspondente por email (${email}):`, error);
-    throw error;
-  }
+exports.findAll = async () => {
+    const query = 'SELECT id, nome_completo, tipo, email, telefone, comarcas_atendidas, is_active FROM correspondentes_servicos ORDER BY nome_completo ASC;';
+    const result = await db.query(query);
+    return result.rows;
 };
 
 /**
- * Busca um correspondente pelo seu CPF.
- * @param {string} cpf - O CPF do correspondente.
- * @returns {Promise<object|null>} Retorna o objeto do correspondente se encontrado.
- */
-const findByCpf = async (cpf) => {
-    try {
-      const result = await pool.query(
-        'SELECT * FROM correspondentes_servicos WHERE cpf = $1',
-        [cpf]
-      );
-      return result.rows[0] || null;
-    } catch (error) {
-      console.error(`Erro ao buscar correspondente por CPF (${cpf}):`, error);
-      throw error;
-    }
-  };
-
-/**
- * Busca um correspondente pelo seu ID.
+ * Busca um correspondente específico pelo seu ID.
  * @param {number} id - O ID do correspondente.
- * @returns {Promise<object|null>} Retorna o objeto do correspondente (excluindo a senha) se encontrado.
+ * @returns {Promise<object|null>} O objeto do correspondente ou null se não for encontrado.
  */
-const findById = async (id) => {
-  try {
-    const result = await pool.query(
-      `SELECT id, nome_completo, tipo, oab, rg, cpf, email, telefone, comarcas_atendidas, is_active, created_at 
-       FROM correspondentes_servicos WHERE id = $1`,
-      [id]
-    );
-    return result.rows[0] || null;
-  } catch (error) {
-    console.error(`Erro ao buscar correspondente por ID (${id}):`, error);
-    throw error;
-  }
+exports.findById = async (id) => {
+    const query = `
+        SELECT id, nome_completo, tipo, oab, rg, cpf, email, telefone, 
+               endereco_id, comarcas_atendidas, is_active 
+        FROM correspondentes_servicos WHERE id = $1;
+    `;
+    const result = await db.query(query, [id]);
+    return result.rows[0];
 };
 
 /**
- * Lista todos os correspondentes (para Admins).
- * @returns {Promise<Array>} Retorna uma lista de todos os correspondentes.
+ * Atualiza os dados de um correspondente.
+ * @param {number} id - O ID do correspondente a ser atualizado.
+ * @param {object} dados - Os novos dados do correspondente.
+ * @returns {Promise<object>} O correspondente atualizado.
  */
-const findAll = async () => {
-    try {
-        const result = await pool.query(
-            'SELECT id, nome_completo, tipo, oab, email, is_active, created_at FROM correspondentes_servicos ORDER BY nome_completo ASC'
-        );
-        return result.rows;
-    } catch (error) {
-        console.error('Erro ao listar todos os correspondentes:', error);
-        throw error;
-    }
+exports.update = async (id, dados) => {
+    const { 
+        nome_completo, tipo, oab, rg, cpf, email, telefone, 
+        endereco_id, comarcas_atendidas
+    } = dados;
+    const query = `
+        UPDATE correspondentes_servicos
+        SET nome_completo = $1, tipo = $2, oab = $3, rg = $4, cpf = $5, email = $6, 
+            telefone = $7, endereco_id = $8, comarcas_atendidas = $9, updated_at = CURRENT_TIMESTAMP
+        WHERE id = $10
+        RETURNING id, nome_completo, email, is_active;
+    `;
+    const values = [
+        nome_completo, tipo, oab, rg, cpf, email, telefone, 
+        endereco_id, comarcas_atendidas, id
+    ];
+    const result = await db.query(query, values);
+    return result.rows[0];
 };
 
 /**
- * Atualiza o status de um correspondente (ativo/inativo).
+ * Ativa ou desativa um correspondente.
  * @param {number} id - O ID do correspondente.
- * @param {boolean} isActive - O novo status.
- * @returns {Promise<object|null>} Retorna o correspondente atualizado.
+ * @param {boolean} is_active - O novo status.
+ * @returns {Promise<object>} O correspondente com o status atualizado.
  */
-const updateActiveStatus = async (id, isActive) => {
-    try {
-        const result = await pool.query(
-            'UPDATE correspondentes_servicos SET is_active = $1, updated_at = NOW() WHERE id = $2 RETURNING id, nome_completo, is_active',
-            [isActive, id]
-        );
-        return result.rows[0] || null;
-    } catch (error) {
-        console.error(`Erro ao atualizar status do correspondente (${id}):`, error);
-        throw error;
-    }
-};
-
-module.exports = {
-  create,
-  findByEmail,
-  findByCpf,
-  findById,
-  findAll,
-  updateActiveStatus,
+exports.updateStatus = async (id, is_active) => {
+    const query = 'UPDATE correspondentes_servicos SET is_active = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2 RETURNING id, nome_completo, is_active;';
+    const result = await db.query(query, [is_active, id]);
+    return result.rows[0];
 };

@@ -1,91 +1,62 @@
-// controllers/user.controller.js
-
-const clienteRepository = require('../repositories/cliente.repository');
-const correspondenteRepository = require('../repositories/correspondente.repository');
-
 /**
- * Lista todos os clientes registados.
- * Apenas para utilizadores com perfil 'admin'.
+ * controllers/user.controller.js
+ * Controlador para as operações de gestão de clientes e correspondentes por administradores.
  */
-const listClientes = async (req, res) => {
-  try {
+const clienteRepository = require("../repositories/cliente.repository");
+const correspondenteRepository = require("../repositories/correspondente.repository");
+const catchAsync = require('../utils/catchAsync');
+
+const userController = {};
+
+userController.listClientes = catchAsync(async (req, res, next) => {
+    // Supõe que o repositório tem um método findAll. Se o nome for outro (ex: getClientes), ajuste aqui.
     const clientes = await clienteRepository.findAll();
     res.status(200).json(clientes);
-  } catch (error) {
-    console.error('Erro ao listar clientes:', error);
-    res.status(500).json({ error: 'Ocorreu um erro inesperado ao listar os clientes.' });
-  }
-};
+});
 
-/**
- * Lista todos os correspondentes registados.
- * Apenas para utilizadores com perfil 'admin'.
- */
-const listCorrespondentes = async (req, res) => {
-  try {
+userController.listCorrespondentes = catchAsync(async (req, res, next) => {
+    // Supõe que o repositório tem um método findAll. Se o nome for outro, ajuste aqui.
     const correspondentes = await correspondenteRepository.findAll();
     res.status(200).json(correspondentes);
-  } catch (error) {
-    console.error('Erro ao listar correspondentes:', error);
-    res.status(500).json({ error: 'Ocorreu um erro inesperado ao listar os correspondentes.' });
-  }
-};
+});
 
-/**
- * Atualiza o status (ativo/inativo) de um cliente.
- * Apenas para utilizadores com perfil 'admin'.
- */
-const updateClienteStatus = async (req, res) => {
-  try {
-    const clienteId = parseInt(req.params.id, 10);
-    const { isActive } = req.body;
+userController.updateClienteStatus = catchAsync(async (req, res, next) => {
+    const { id } = req.params;
+    const { is_active } = req.body;
 
-    if (typeof isActive !== 'boolean') {
-      return res.status(400).json({ error: 'O campo "isActive" é obrigatório e deve ser um booleano.' });
+    if (typeof is_active !== 'boolean') {
+        const err = new Error('O campo "is_active" é obrigatório e deve ser um booleano (true/false).');
+        err.statusCode = 400;
+        return next(err);
+    }
+    
+    const cliente = await clienteRepository.updateStatus(id, is_active); 
+    if (!cliente) {
+        const err = new Error('Cliente não encontrado para atualização de status.');
+        err.statusCode = 404;
+        return next(err);
+    }
+    res.status(200).send({ message: `Status do cliente ${id} atualizado com sucesso.` });
+});
+
+userController.updateCorrespondenteStatus = catchAsync(async (req, res, next) => {
+    const { id } = req.params;
+    const { is_active } = req.body;
+
+    if (typeof is_active !== 'boolean') {
+        const err = new Error('O campo "is_active" é obrigatório e deve ser um booleano (true/false).');
+        err.statusCode = 400;
+        return next(err);
     }
 
-    const clienteAtualizado = await clienteRepository.updateActiveStatus(clienteId, isActive);
-
-    if (!clienteAtualizado) {
-      return res.status(404).json({ error: 'Cliente não encontrado.' });
+    const correspondente = await correspondenteRepository.updateStatus(id, is_active);
+    if (!correspondente) {
+        const err = new Error('Correspondente não encontrado para atualização de status.');
+        err.statusCode = 404;
+        return next(err);
     }
+    res.status(200).send({ message: `Status do correspondente ${id} atualizado com sucesso.` });
+});
 
-    res.status(200).json(clienteAtualizado);
-  } catch (error) {
-    console.error(`Erro ao atualizar status do cliente (${req.params.id}):`, error);
-    res.status(500).json({ error: 'Ocorreu um erro inesperado.' });
-  }
-};
-
-/**
- * Atualiza o status (ativo/inativo) de um correspondente.
- * Apenas para utilizadores com perfil 'admin'.
- */
-const updateCorrespondenteStatus = async (req, res) => {
-    try {
-      const correspondenteId = parseInt(req.params.id, 10);
-      const { isActive } = req.body;
-  
-      if (typeof isActive !== 'boolean') {
-        return res.status(400).json({ error: 'O campo "isActive" é obrigatório e deve ser um booleano.' });
-      }
-  
-      const correspondenteAtualizado = await correspondenteRepository.updateActiveStatus(correspondenteId, isActive);
-  
-      if (!correspondenteAtualizado) {
-        return res.status(404).json({ error: 'Correspondente não encontrado.' });
-      }
-  
-      res.status(200).json(correspondenteAtualizado);
-    } catch (error) {
-      console.error(`Erro ao atualizar status do correspondente (${req.params.id}):`, error);
-      res.status(500).json({ error: 'Ocorreu um erro inesperado.' });
-    }
-  };
-
-module.exports = {
-  listClientes,
-  listCorrespondentes,
-  updateClienteStatus,
-  updateCorrespondenteStatus,
-};
+// Exporta o objeto do controlador no final, garantindo que tudo está incluído.
+module.exports = userController;

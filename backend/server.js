@@ -1,63 +1,58 @@
-// Carrega as variáveis de ambiente do arquivo .env no início de tudo
-require('dotenv').config();
+/**
+ * server.js
+ * Ponto de entrada principal da aplicação, agora com segurança reforçada.
+ */
+require('dotenv').config(); 
 
-const express = require('express');
-const cors = require('cors');
-const bodyParser = require('body-parser');
-const { testConnection } = require('./db');
-
+const express = require("express");
+const cors = require("cors");
+const helmet = require("helmet"); // Importa o helmet para segurança
+const path = require('path');
 const app = express();
-const PORT = process.env.PORT || 3000;
+const db = require('./db');
 
-// --- Middlewares ---
+// === MIDDLEWARES ESSENCIAIS ===
+app.use(helmet()); // Utiliza o helmet para adicionar cabeçalhos de segurança
+app.use(cors());
+app.use(express.json()); 
+app.use(express.urlencoded({ extended: true }));
 
-// Configuração do CORS para permitir requisições apenas da origem definida no .env
-const corsOptions = {
-  origin: process.env.CORS_ORIGIN,
-};
-app.use(cors(corsOptions));
+// Serve ficheiros estáticos da pasta 'uploads' (para aceder aos anexos)
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
-// Faz o parse de requisições com corpo no formato JSON
-app.use(bodyParser.json());
-// Faz o parse de requisições com corpo no formato urlencoded
-app.use(bodyParser.urlencoded({ extended: true }));
-
-
-// --- Rotas da API ---
-// Importa todos os módulos de rotas da nossa aplicação
+// === ROTAS DA APLICAÇÃO ===
+// As rotas foram atualizadas para refletir a nova estrutura (clientes, correspondentes)
 const authRoutes = require('./routes/auth.routes');
+const clienteRoutes = require('./routes/cliente.routes');
+const correspondenteRoutes = require('./routes/correspondente.routes');
 const demandaRoutes = require('./routes/demanda.routes');
-const userRoutes = require('./routes/user.routes');
+const dashboardRoutes = require('./routes/dashboard.routes');
 
-// Define os prefixos para cada conjunto de rotas
+// Associa as rotas aos seus respectivos endpoints base
 app.use('/api/auth', authRoutes);
+app.use('/api/clientes', clienteRoutes);
+app.use('/api/correspondentes', correspondenteRoutes);
 app.use('/api/demandas', demandaRoutes);
-app.use('/api/users', userRoutes); // Rotas para gestão de utilizadores
+app.use('/api/dashboard', dashboardRoutes);
 
-
-// Rota de teste para verificar se o servidor está no ar
-app.get('/', (req, res) => {
-  res.json({ message: 'Bem-vindo à API do Sistema de Gestão de Diligências!' });
+// Rota raiz para teste
+app.get("/", (req, res) => {
+  res.json({ message: "Bem-vindo à API JurisConnect." });
 });
 
+// === MIDDLEWARE DE ERROS ===
+// Deve ser o último middleware a ser adicionado.
+const errorHandler = require('./middlewares/error.middleware');
+app.use(errorHandler);
 
-// --- Função de Inicialização do Servidor ---
+// Define a porta e inicia o servidor
+const PORT = process.env.PORT || 8080;
+
 const startServer = async () => {
-  try {
-    // 1. Testa a conexão com o banco de dados.
-    await testConnection();
-    
-    // 2. Se a conexão for bem-sucedida, inicia o servidor Express.
-    app.listen(PORT, () => {
-      console.log(`✅ Servidor escutando na porta ${PORT}`);
-    });
-  } catch (error) {
-    // Se a conexão com o banco falhar, o processo será encerrado pela função testConnection.
-    // Este log é uma segurança extra.
-    console.error('❌ Falha ao iniciar o servidor:', error);
-    process.exit(1);
-  }
+  await db.testConnection(); // Testa a conexão com o banco de dados antes de iniciar
+  app.listen(PORT, () => {
+    console.log(`Servidor está a rodar na porta ${PORT}.`);
+  });
 };
 
-// Inicia a aplicação
 startServer();

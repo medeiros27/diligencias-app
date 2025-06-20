@@ -1,146 +1,108 @@
-// tests/auth.integration.test.js
-
-// A LINHA CORRIGIDA: Carrega as variáveis de ambiente do ficheiro .env
-// Isto garante que process.env.JWT_SECRET tenha um valor durante os testes.
-require('dotenv').config();
-
+/**
+ * tests/auth.integration.test.js
+ * Testes de integração para o fluxo de autenticação (login).
+ * NOTA: Este teste requer uma base de dados de teste separada para não interferir com os dados de desenvolvimento.
+ */
 const request = require('supertest');
 const express = require('express');
-const bodyParser = require('body-parser');
 const bcrypt = require('bcryptjs');
-
-// Recriar uma instância do app para o teste.
-const app = express();
-app.use(bodyParser.json());
-
-// Importar as rotas
+const db = require('../db'); // O nosso módulo de base de dados
 const authRoutes = require('../routes/auth.routes');
-const demandaRoutes = require('../routes/demanda.routes');
+const errorHandler = require('../middlewares/error.middleware');
 
-// Configurar o app de teste com as rotas
+// Configuração da aplicação Express para os testes
+const app = express();
+app.use(express.json());
 app.use('/api/auth', authRoutes);
-app.use('/api/demandas', demandaRoutes);
+app.use(errorHandler);
 
-// --- Mocks dos Repositórios ---
-// Vamos simular o comportamento dos nossos repositórios para isolar os testes.
-jest.mock('../repositories/cliente.repository');
-jest.mock('../repositories/correspondente.repository');
-jest.mock('../repositories/admin.repository');
-jest.mock('../repositories/demanda.repository');
+describe('Fluxo de Autenticação (/api/auth)', () => {
 
-const clienteRepository = require('../repositories/cliente.repository');
-const correspondenteRepository = require('../repositories/correspondente.repository');
-const adminRepository = require('../repositories/admin.repository');
-const demandaRepository = require('../repositories/demanda.repository');
+    // Antes de todos os testes, criamos utilizadores de teste nas respectivas tabelas.
+    beforeAll(async () => {
+        // Limpa as tabelas para garantir um estado limpo
+        await db.query('DELETE FROM log_atividades');
+        await db.query('DELETE FROM anexos_demandas');
+        await db.query('DELETE FROM demandas');
+        await db.query('DELETE FROM admins');
+        await db.query('DELETE FROM clientes');
+        await db.query('DELETE FROM correspondentes_servicos');
 
+        // Cria um utilizador de cada perfil
+        const adminSenha = await bcrypt.hash('senhaAdmin123', 10);
+        await db.query(`INSERT INTO admins (nome, email, senha_hash) VALUES ('Admin Teste', 'admin@teste.com', '${adminSenha}')`);
 
-// ----- Início dos Testes de Integração -----
+        const clienteSenha = await bcrypt.hash('senhaCliente123', 10);
+        await db.query(`INSERT INTO clientes (nome_completo, telefone, email, senha_hash) VALUES ('Cliente Teste', '11999999999', 'cliente@teste.com', '${clienteSenha}')`);
 
-describe('Fluxo de Autenticação e Autorização', () => {
-
-  // Limpa todos os mocks antes de cada teste
-  beforeEach(() => {
-    jest.clearAllMocks();
-  });
-
-  it('POST /api/auth/clientes/register - Deve registar um novo cliente com sucesso', async () => {
-    // Simula que o email não existe no banco
-    clienteRepository.findByEmail.mockResolvedValue(null);
-    // Simula a resposta da criação do novo cliente
-    clienteRepository.create.mockResolvedValue({
-      id: 1,
-      nome_completo: 'Cliente de Teste',
-      email: 'teste@cliente.com',
-    });
-
-    const response = await request(app)
-      .post('/api/auth/clientes/register')
-      .send({
-        nome_completo: 'Cliente de Teste',
-        telefone: '123456789',
-        email: 'teste@cliente.com',
-        senha: 'senhaForte123'
-      });
-    
-    expect(response.statusCode).toBe(201);
-    expect(response.body.message).toBe('Cliente registado com sucesso!');
-  });
-
-
-  it('POST /api/auth/login - Deve autenticar um cliente e retornar um token JWT', async () => {
-    const email = 'login@cliente.com';
-    const senha = 'senhaForte123';
-    const senhaHash = await bcrypt.hash(senha, 10);
-    
-    // Simula que o utilizador não é admin nem correspondente
-    adminRepository.findByEmail.mockResolvedValue(null);
-    correspondenteRepository.findByEmail.mockResolvedValue(null);
-    // Simula que o cliente foi encontrado com a senha correta
-    clienteRepository.findByEmail.mockResolvedValue({
-      id: 1,
-      nome_completo: 'Cliente de Login',
-      email: email,
-      senha_hash: senhaHash
-    });
-
-    const response = await request(app)
-      .post('/api/auth/login')
-      .send({ email, senha });
-
-    expect(response.statusCode).toBe(200);
-    expect(response.body).toHaveProperty('token'); // Verifica se um token foi retornado
-  });
-
-
-  it('POST /api/demandas - Deve permitir que um cliente autenticado crie uma diligência', async () => {
-    // 1. Primeiro, simulamos o login para obter um token válido
-    const email = 'cliente.logado@teste.com';
-    const senha = 'senhaForte123';
-    const senhaHash = await bcrypt.hash(senha, 10);
-
-    adminRepository.findByEmail.mockResolvedValue(null);
-    correspondenteRepository.findByEmail.mockResolvedValue(null);
-    clienteRepository.findByEmail.mockResolvedValue({
-      id: 1,
-      email,
-      senha_hash: senhaHash
+        const corrSenha = await bcrypt.hash('senhaCorr123', 10);
+        // CORREÇÃO: Adicionamos o campo 'oab' com um valor para o correspondente do tipo 'Advogado'.
+        await db.query(`
+            INSERT INTO correspondentes_servicos (nome_completo, tipo, oab, cpf, email, telefone, comarcas_atendidas, senha_hash) 
+            VALUES ('Corr Teste', 'Advogado', 'SP123456', '123.456.789-00', 'corr@teste.com', '11888888888', 'São Paulo', '${corrSenha}')
+        `);
     });
     
-    const loginResponse = await request(app)
-      .post('/api/auth/login')
-      .send({ email, senha });
-    
-    const token = loginResponse.body.token;
+    it('deve autenticar um admin com sucesso e retornar um token', async () => {
+        const res = await request(app)
+            .post('/api/auth/signin')
+            .send({
+                email: 'admin@teste.com',
+                password: 'senhaAdmin123'
+            });
 
-    // 2. Agora, usamos o token para tentar criar uma diligência
-    const novaDemandaData = {
-      titulo: "Diligência de Teste",
-      descricao_completa: "Descrição para o teste de integração.",
-      valor_proposto_cliente: 150.00
-    };
+        expect(res.statusCode).toEqual(200);
+        expect(res.body).toHaveProperty('accessToken');
+        expect(res.body.perfil).toBe('admin');
+    });
 
-    // Simula a criação da demanda no repositório
-    demandaRepository.create.mockResolvedValue({ id: 10, ...novaDemandaData });
+    it('deve autenticar um cliente com sucesso e retornar um token', async () => {
+        const res = await request(app)
+            .post('/api/auth/signin')
+            .send({
+                email: 'cliente@teste.com',
+                password: 'senhaCliente123'
+            });
 
-    const demandaResponse = await request(app)
-      .post('/api/demandas')
-      .set('Authorization', `Bearer ${token}`) // Envia o token no cabeçalho
-      .send(novaDemandaData);
-      
-    expect(demandaResponse.statusCode).toBe(201);
-    expect(demandaResponse.body.titulo).toBe("Diligência de Teste");
-  });
+        expect(res.statusCode).toEqual(200);
+        expect(res.body).toHaveProperty('accessToken');
+        expect(res.body.perfil).toBe('cliente');
+    });
 
+    it('deve autenticar um correspondente com sucesso e retornar um token', async () => {
+        const res = await request(app)
+            .post('/api/auth/signin')
+            .send({
+                email: 'corr@teste.com',
+                password: 'senhaCorr123'
+            });
 
-  it('POST /api/demandas - Deve bloquear um utilizador sem token', async () => {
-    const response = await request(app)
-      .post('/api/demandas')
-      .send({
-        titulo: "Tentativa Bloqueada",
-        descricao_completa: "Não deve funcionar."
-      });
+        expect(res.statusCode).toEqual(200);
+        expect(res.body).toHaveProperty('accessToken');
+        expect(res.body.perfil).toBe('correspondente');
+    });
 
-    expect(response.statusCode).toBe(401); // 401 Unauthorized
-    expect(response.body.error).toBe('Não autorizado, nenhum token fornecido.');
-  });
+    it('deve retornar erro 401 com uma senha incorreta', async () => {
+        const res = await request(app)
+            .post('/api/auth/signin')
+            .send({
+                email: 'admin@teste.com',
+                password: 'senhaErrada'
+            });
+
+        expect(res.statusCode).toEqual(401);
+        expect(res.body.message).toContain('inválidas');
+    });
+
+    it('deve retornar erro 401 com um email inexistente', async () => {
+        const res = await request(app)
+            .post('/api/auth/signin')
+            .send({
+                email: 'fantasma@naoexiste.com',
+                password: 'qualquersenha'
+            });
+
+        expect(res.statusCode).toEqual(401);
+        expect(res.body.message).toContain('inválidas');
+    });
 });

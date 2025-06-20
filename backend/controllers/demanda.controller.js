@@ -1,157 +1,76 @@
-// controllers/demanda.controller.js
-
-const demandaRepository = require('../repositories/demanda.repository.js');
-
 /**
- * Cria uma nova diligência.
- * Apenas utilizadores com perfil 'cliente' podem criar.
+ * controllers/demanda.controller.js
+ * Controlador com a lógica de negócio para gerenciar demandas, alinhado ao novo esquema.
  */
-const createDemanda = async (req, res) => {
-  try {
-    const cliente_id = req.user.userId; // ID do cliente vem do token JWT
-    const dadosDemanda = { ...req.body, cliente_id };
+const demandaRepository = require('../repositories/demanda.repository');
+const logService = require('../services/log.service');
+const catchAsync = require('../utils/catchAsync');
 
+const demandaController = {};
+
+demandaController.createDemanda = catchAsync(async (req, res, next) => {
+    const dadosDemanda = { ...req.body, cliente_id: req.user.id };
     const novaDemanda = await demandaRepository.create(dadosDemanda);
+    await logService.createLog(novaDemanda.id, req.user, 'CRIACAO', { titulo: novaDemanda.titulo });
     res.status(201).json(novaDemanda);
-  } catch (error) {
-    console.error('Erro ao criar diligência:', error);
-    res.status(500).json({ error: 'Ocorreu um erro inesperado ao criar a diligência.' });
-  }
-};
+});
 
-/**
- * Busca uma diligência específica pelo seu ID.
- * Regras de acesso:
- * - Admin pode ver qualquer diligência.
- * - Cliente só pode ver as suas próprias diligências.
- * - Correspondente só pode ver as diligências que lhe foram atribuídas.
- */
-const getDemandaById = async (req, res) => {
-  try {
-    const demandaId = parseInt(req.params.id, 10);
-    const { userId, perfil } = req.user;
-
-    const demanda = await demandaRepository.findById(demandaId);
-
+demandaController.getDemandaById = catchAsync(async (req, res, next) => {
+    const demanda = await demandaRepository.findById(req.params.id);
     if (!demanda) {
-      return res.status(404).json({ error: 'Diligência não encontrada.' });
+        const err = new Error('Demanda não encontrada.');
+        err.statusCode = 404;
+        return next(err);
     }
-
-    // Verifica a permissão de acesso
-    if (
-      perfil !== 'admin' &&
-      demanda.cliente_id !== userId &&
-      demanda.correspondente_id !== userId
-    ) {
-      return res.status(403).json({ error: 'Acesso negado. Não tem permissão para ver esta diligência.' });
-    }
-
     res.status(200).json(demanda);
-  } catch (error) {
-    console.error(`Erro ao buscar diligência por ID:`, error);
-    res.status(500).json({ error: 'Ocorreu um erro inesperado.' });
-  }
-};
+});
 
-/**
- * Lista as diligências para o utilizador logado.
- * - Se for 'admin', lista todas.
- * - Se for 'cliente', lista as suas.
- * - Se for 'correspondente', lista as suas.
- */
-const getMinhasDemandas = async (req, res) => {
-  try {
-    const { userId, perfil } = req.user;
+demandaController.getMinhasDemandas = catchAsync(async (req, res, next) => {
+    const { id: userId, perfil } = req.user;
     let demandas;
-
     switch (perfil) {
-      case 'admin':
-        demandas = await demandaRepository.findAll();
-        break;
-      case 'cliente':
-        demandas = await demandaRepository.findByClienteId(userId);
-        break;
-      case 'correspondente':
-        demandas = await demandaRepository.findByCorrespondenteId(userId);
-        break;
-      default:
-        return res.status(403).json({ error: 'Perfil de utilizador inválido.' });
+        case 'admin': demandas = await demandaRepository.findAll(); break;
+        case 'cliente': demandas = await demandaRepository.findByClienteId(userId); break;
+        case 'correspondente': demandas = await demandaRepository.findByCorrespondenteId(userId); break;
+        default:
+            const err = new Error('Perfil de utilizador inválido.');
+            err.statusCode = 403;
+            return next(err);
     }
-
     res.status(200).json(demandas);
-  } catch (error) {
-    console.error('Erro ao listar diligências:', error);
-    res.status(500).json({ error: 'Ocorreu um erro inesperado.' });
-  }
-};
+});
 
-/**
- * Atribui uma diligência a um correspondente.
- * Apenas utilizadores com perfil 'admin' podem atribuir.
- */
-const assignDemanda = async (req, res) => {
-    try {
-        const demandaId = parseInt(req.params.id, 10);
-        const { correspondenteId } = req.body;
-
-        if (!correspondenteId) {
-            return res.status(400).json({ error: 'O ID do correspondente é obrigatório.' });
-        }
-
-        const demandaAtualizada = await demandaRepository.assignCorrespondente(demandaId, correspondenteId);
-
-        if (!demandaAtualizada) {
-            return res.status(404).json({ error: 'Diligência não encontrada para atribuição.' });
-        }
-        
-        // TODO: Futuramente, disparar uma notificação para o correspondente.
-
-        res.status(200).json(demandaAtualizada);
-    } catch (error) {
-        console.error('Erro ao atribuir diligência:', error);
-        res.status(500).json({ error: 'Ocorreu um erro inesperado ao atribuir a diligência.' });
+demandaController.assignDemanda = catchAsync(async (req, res, next) => {
+    const demandaId = parseInt(req.params.id, 10);
+    const { correspondenteId } = req.body;
+    if (!correspondenteId) {
+        const err = new Error('O ID do correspondente é obrigatório.');
+        err.statusCode = 400;
+        return next(err);
     }
-};
-
-/**
- * Atualiza o status de uma diligência.
- * Apenas 'admin' ou o correspondente atribuído podem atualizar.
- */
-const updateDemandaStatus = async (req, res) => {
-    try {
-        const demandaId = parseInt(req.params.id, 10);
-        const { status } = req.body;
-        const { userId, perfil } = req.user;
-
-        if (!status) {
-            return res.status(400).json({ error: 'O novo status é obrigatório.' });
-        }
-
-        // Antes de atualizar, verificar se o utilizador tem permissão
-        const demanda = await demandaRepository.findById(demandaId);
-        if (!demanda) {
-            return res.status(404).json({ error: 'Diligência não encontrada.' });
-        }
-
-        if (perfil !== 'admin' && demanda.correspondente_id !== userId) {
-            return res.status(403).json({ error: 'Acesso negado. Apenas o administrador ou o correspondente responsável podem alterar o status.' });
-        }
-        
-        const demandaAtualizada = await demandaRepository.updateStatus(demandaId, status);
-
-        // TODO: Futuramente, disparar uma notificação para o cliente.
-        
-        res.status(200).json(demandaAtualizada);
-    } catch (error) {
-        console.error('Erro ao atualizar status da diligência:', error);
-        res.status(500).json({ error: 'Ocorreu um erro inesperado ao atualizar o status.' });
+    const demandaAtualizada = await demandaRepository.assignCorrespondente(demandaId, correspondenteId);
+    if (!demandaAtualizada) {
+        const err = new Error('Demanda não encontrada para atribuição.');
+        err.statusCode = 404;
+        return next(err);
     }
-};
+    await logService.createLog(demandaId, req.user, 'ATUALIZACAO', { acao: 'Atribuição', id_correspondente: correspondenteId });
+    res.status(200).json(demandaAtualizada);
+});
 
-module.exports = {
-  createDemanda,
-  getDemandaById,
-  getMinhasDemandas,
-  assignDemanda,
-  updateDemandaStatus,
-};
+demandaController.updateDemandaStatus = catchAsync(async (req, res, next) => {
+    const demandaId = parseInt(req.params.id, 10);
+    const { status } = req.body;
+    const demandaAntes = await demandaRepository.findById(demandaId);
+    if (!demandaAntes) {
+        const err = new Error('Diligência não encontrada.');
+        err.statusCode = 404;
+        return next(err);
+    }
+    const demandaAtualizada = await demandaRepository.updateStatus(demandaId, status);
+    await logService.createLog(demandaId, req.user, 'MUDANCA_STATUS', { de: demandaAntes.status, para: status });
+    res.status(200).json(demandaAtualizada);
+});
+
+// Exporta o objeto do controlador no final.
+module.exports = demandaController;
